@@ -33,11 +33,10 @@
             <artifactId>gedcom4j</artifactId>
             <version>4.0.1</version>
         </dependency>
-
-                <dependency>
+        <dependency>
             <groupId>org.gedcomx</groupId>
             <artifactId>gedcom5-conversion</artifactId>
-            <version></version>
+            <version>1.13.0</version>
         </dependency>
         <dependency>
             <groupId>javax.annotation</groupId>
@@ -70,8 +69,6 @@
             <version>3.24.2</version>
             <scope>test</scope>
         </dependency>
-
-
     </dependencies>
 
 </project>
