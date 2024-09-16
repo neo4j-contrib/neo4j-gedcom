@@ -1,19 +1,27 @@
 package com.neo4j.data.importer;
 
 import org.gedcom4j.exception.GedcomParserException;
-import org.gedcom4j.model.Family;
 import org.gedcom4j.model.Gedcom;
 import org.gedcom4j.model.Individual;
+import org.gedcom4j.model.PersonalName;
+import org.gedcom4j.model.StringWithCustomFacts;
 import org.gedcom4j.parser.GedcomParser;
 import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.Config;
 import org.neo4j.configuration.GraphDatabaseSettings;
 import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Transaction;
+import org.neo4j.logging.Log;
 import org.neo4j.procedure.Context;
+import org.neo4j.procedure.Mode;
 import org.neo4j.procedure.Name;
 import org.neo4j.procedure.Procedure;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class GedcomImporter {
 
@@ -21,50 +29,63 @@ public class GedcomImporter {
     public GraphDatabaseService db;
 
     @Context
+    public Log logger;
+
+    @Context
     public DependencyResolver dependencyResolver;
 
-    @Procedure
-    public void doImport(@Name("gedcomFile") String gedcomFileName) throws IOException {
-        // Read file
+    @Procedure(value = "genealogy.loadGedcom", mode = Mode.WRITE)
+    public void loadGedcom(@Name("file") String file) throws IOException {
+        var filePath = rebuildPath(file);
+        var model = parseModel(filePath);
 
-        var filePath = readFile(gedcomFileName);
+        try (Transaction tx = db.beginTx()) {
+            model.getIndividuals().values()
+                    .forEach(individual -> {
+                        var attributes = Map.of(
+                                "first_names", extractNames(individual, PersonalName::getGivenName),
+                                "last_names", extractNames(individual, PersonalName::getSurname)
+                        );
+                        tx.execute("CREATE (i:Individual) SET i = $attributes", Map.of("attributes", attributes));
+                    });
+            tx.commit();
+        }
 
+    }
 
-        //
-//        var setting = graphDatabaseSettings.getSetting("server.directories.import");
+    private static List<String> extractNames(Individual individual, Function<PersonalName, StringWithCustomFacts> extractor) {
+        return individual.getNames()
+                .stream()
+                .filter(name -> extractor.apply(name) != null)
+                .map(name -> extractor.apply(name).getValue())
+                .collect(Collectors.toList());
+    }
 
-
-        String x  = ";";
-        // Parse
-
-        Gedcom gedcom;
+    private Gedcom parseModel(String filePath) throws IOException {
         var parser = new GedcomParser();
         try {
             parser.load(filePath);
-            gedcom = parser.getGedcom();
+            processImportIssues(parser);
+            return parser.getGedcom();
         } catch (GedcomParserException e) {
             throw new RuntimeException(e);
         }
-
-        // Import
-        gedcom.getIndividuals().forEach((id, individual) -> createIndividualNodes(individual));
-        gedcom.getFamilies().forEach((id, family) -> createFamilyRelationships(family));
-
-
     }
 
-    private void createFamilyRelationships(Family family) {
-
+    private void processImportIssues(GedcomParser parser) {
+        List<String> errors = parser.getErrors();
+        if (!errors.isEmpty()) {
+            throw new RuntimeException(String.format("The following errors occurred during the import: %n\t%s", String.join("\n\t", errors)));
+        }
+        parser.getWarnings().forEach((warning) -> {
+            logger.warn(warning);
+        });
     }
 
-    private void createIndividualNodes(Individual individualName) {
-        //todo
-    }
-
-    private String readFile(String gedcomFileName) {
+    private String rebuildPath(String fileName) {
         Config config = dependencyResolver.resolveDependency(Config.class);
         var fileRoot = config.get(GraphDatabaseSettings.load_csv_file_url_root);
-        return fileRoot + "/" + gedcomFileName;
+        return fileRoot + "/" + fileName;
     }
 
 }
