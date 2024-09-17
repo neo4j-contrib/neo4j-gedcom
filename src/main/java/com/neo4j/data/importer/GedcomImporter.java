@@ -1,27 +1,28 @@
 package com.neo4j.data.importer;
 
-import org.gedcom4j.exception.GedcomParserException;
-import org.gedcom4j.model.Gedcom;
-import org.gedcom4j.model.Individual;
-import org.gedcom4j.model.PersonalName;
-import org.gedcom4j.model.StringWithCustomFacts;
-import org.gedcom4j.parser.GedcomParser;
+import org.folg.gedcom.parser.ModelParser;
+import org.gedcomx.Gedcomx;
+import org.gedcomx.conclusion.NamePart;
+import org.gedcomx.conclusion.Person;
+import org.gedcomx.conversion.GedcomxConversionResult;
+import org.gedcomx.conversion.gedcom.dq55.GedcomMapper;
+import org.gedcomx.conversion.gedcom.dq55.MappingConfig;
+import org.gedcomx.types.NamePartType;
+import org.gedcomx.types.RelationshipType;
 import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.Config;
 import org.neo4j.configuration.GraphDatabaseSettings;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.logging.Log;
-import org.neo4j.procedure.Context;
-import org.neo4j.procedure.Mode;
-import org.neo4j.procedure.Name;
-import org.neo4j.procedure.Procedure;
+import org.neo4j.procedure.*;
+import org.xml.sax.SAXParseException;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class GedcomImporter {
 
@@ -35,51 +36,91 @@ public class GedcomImporter {
     public DependencyResolver dependencyResolver;
 
     @Procedure(value = "genealogy.loadGedcom", mode = Mode.WRITE)
-    public void loadGedcom(@Name("file") String file) throws IOException {
+    public Stream<Statistics> loadGedcom(@Name("file") String file) throws IOException, SAXParseException {
         var filePath = rebuildPath(file);
-        var model = parseModel(filePath);
+        var modelX = convertGedcomFile(filePath);
+
+        var statistics = new Statistics();
 
         try (Transaction tx = db.beginTx()) {
-            model.getIndividuals().values()
-                    .forEach(individual -> {
-                        var attributes = Map.of(
-                                "first_names", extractNames(individual, PersonalName::getGivenName),
-                                "last_names", extractNames(individual, PersonalName::getSurname)
-                        );
-                        tx.execute("CREATE (i:Individual) SET i = $attributes", Map.of("attributes", attributes));
-                    });
+            modelX.getPersons().forEach(person -> {
+                var attributes = Map.of(
+                        "first_names", extractNames(person, NamePartType.Given),
+                        "last_names", extractNames(person, NamePartType.Surname),
+                        "id", person.getId()
+                );
+                var personsStats = tx.execute("CREATE (i:Person) SET i = $attributes", Map.of("attributes", attributes))
+                        .getQueryStatistics();
+
+                statistics.addNodesCreated(personsStats.getNodesCreated());
+
+            });
+
+            modelX.getRelationships().forEach(relationship -> {
+                RelationshipType.Couple.toQNameURI();
+
+                var person1 = modelX.findPerson(relationship.getPerson1().getResource());
+                var person2 = modelX.findPerson(relationship.getPerson2().getResource());
+
+                if (person1 == null || person2 == null) {
+                    logger.debug("Unable to find person(s) for relationship: {}", relationship.getId());
+                    return;
+                }
+
+                if (relationship.getType().equals(RelationshipType.Couple.toQNameURI())) {
+                    var stats = tx.execute("""
+                                    MATCH (h:Person {id: $p1}), (w:Person {id: $p2})
+                                    CREATE (h)-[:IS_MARRIED_TO]->(w)""",
+                            Map.of(
+                                    "p1", person1.getId(),
+                                    "p2", person2.getId()
+                            )
+                    ).getQueryStatistics();
+
+                    statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
+
+                } else if (relationship.getType().equals(RelationshipType.ParentChild.toQNameURI())) {
+                    var stats = tx.execute("""
+                                    MATCH (c:Person {id: $child}), (p:Person {id: $parent})
+                                    CREATE (c)-[:IS_CHILD_OF]->(p)""",
+                            Map.of(
+                                    "parent", person1.getId(),
+                                    "child", person2.getId()
+                            )
+                    ).getQueryStatistics();
+
+                    statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
+                }
+            });
+
             tx.commit();
         }
 
+        logger.info("Created {} nodes, {} relationships from {} GEDCOM import", statistics.nodesCreated, statistics.relationshipsCreated, file);
+        return Stream.of(statistics);
     }
 
-    private static List<String> extractNames(Individual individual, Function<PersonalName, StringWithCustomFacts> extractor) {
-        return individual.getNames()
-                .stream()
-                .filter(name -> extractor.apply(name) != null)
-                .map(name -> extractor.apply(name).getValue())
-                .collect(Collectors.toList());
+    private static List<String> extractNames(Person person, NamePartType namePartType) {
+        return person.getNames().stream()
+                .filter(n -> n.getNameForms() != null)
+                .flatMap(n -> n.getNameForms().stream())
+                .filter(n -> n.getParts() != null)
+                .flatMap(nf -> nf.getParts().stream())
+                .filter(n -> n.getType() !=  null && n.getType().equals(namePartType.toQNameURI()))
+                .map(NamePart::getValue)
+                .toList();
     }
 
-    private Gedcom parseModel(String filePath) throws IOException {
-        var parser = new GedcomParser();
-        try {
-            parser.load(filePath);
-            processImportIssues(parser);
-            return parser.getGedcom();
-        } catch (GedcomParserException e) {
-            throw new RuntimeException(e);
-        }
-    }
+    public static Gedcomx convertGedcomFile(String filePath) throws IOException, SAXParseException {
+        var modelParser = new ModelParser();
+        var gedcomFile = new File(filePath);
+        org.folg.gedcom.model.Gedcom gedcom = modelParser.parseGedcom(gedcomFile);
+        gedcom.createIndexes();
 
-    private void processImportIssues(GedcomParser parser) {
-        List<String> errors = parser.getErrors();
-        if (!errors.isEmpty()) {
-            throw new RuntimeException(String.format("The following errors occurred during the import: %n\t%s", String.join("\n\t", errors)));
-        }
-        parser.getWarnings().forEach((warning) -> {
-            logger.warn(warning);
-        });
+        MappingConfig config = new MappingConfig(gedcomFile.getName(), false);
+        var mapper = new GedcomMapper(config);
+        GedcomxConversionResult result = mapper.toGedcomx(gedcom);
+        return result.getDataset();
     }
 
     private String rebuildPath(String fileName) {
@@ -87,5 +128,6 @@ public class GedcomImporter {
         var fileRoot = config.get(GraphDatabaseSettings.load_csv_file_url_root);
         return fileRoot + "/" + fileName;
     }
+
 
 }
