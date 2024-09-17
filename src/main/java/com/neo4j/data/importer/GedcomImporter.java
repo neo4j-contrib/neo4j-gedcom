@@ -36,7 +36,6 @@ public class GedcomImporter {
     public DependencyResolver dependencyResolver;
 
     @Procedure(value = "genealogy.loadGedcom", mode = Mode.WRITE)
-
     public Stream<Statistics> loadGedcom(@Name("file") String file) throws IOException, SAXParseException {
         var filePath = rebuildPath(file);
         var modelX = convertGedcomFile(filePath);
@@ -53,7 +52,7 @@ public class GedcomImporter {
                 var personsStats = tx.execute("CREATE (i:Person) SET i = $attributes", Map.of("attributes", attributes))
                         .getQueryStatistics();
 
-                statistics.addNodesCreated(Long.valueOf(personsStats.getNodesCreated()));
+                statistics.addNodesCreated(personsStats.getNodesCreated());
 
             });
 
@@ -63,8 +62,13 @@ public class GedcomImporter {
                 var person1 = modelX.findPerson(relationship.getPerson1().getResource());
                 var person2 = modelX.findPerson(relationship.getPerson2().getResource());
 
+                if (person1 == null || person2 == null) {
+                    logger.debug("Unable to find person(s) for relationship: {}", relationship.getId());
+                    return;
+                }
+
                 if (relationship.getType().equals(RelationshipType.Couple.toQNameURI())) {
-                    var queryStatistics = tx.execute("""
+                    var stats = tx.execute("""
                                     MATCH (h:Person {id: $p1}), (w:Person {id: $p2})
                                     CREATE (h)-[:IS_MARRIED_TO]->(w)""",
                             Map.of(
@@ -73,9 +77,10 @@ public class GedcomImporter {
                             )
                     ).getQueryStatistics();
 
-                    statistics.addRelationshipsCreated(Long.valueOf(queryStatistics.getRelationshipsCreated()));
+                    statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
+
                 } else if (relationship.getType().equals(RelationshipType.ParentChild.toQNameURI())) {
-                    var queryStatistics = tx.execute("""
+                    var stats = tx.execute("""
                                     MATCH (c:Person {id: $child}), (p:Person {id: $parent})
                                     CREATE (c)-[:IS_CHILD_OF]->(p)""",
                             Map.of(
@@ -84,7 +89,7 @@ public class GedcomImporter {
                             )
                     ).getQueryStatistics();
 
-                    statistics.addRelationshipsCreated(Long.valueOf(queryStatistics.getRelationshipsCreated()));
+                    statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
                 }
             });
 
@@ -96,8 +101,12 @@ public class GedcomImporter {
     }
 
     private static List<String> extractNames(Person person, NamePartType namePartType) {
-        return person.getNames().stream().flatMap(n -> n.getNameForms().stream()).flatMap(nf -> nf.getParts().stream())
-                .filter(n -> n.getType().equals(namePartType.toQNameURI()))
+        return person.getNames().stream()
+                .filter(n -> n.getNameForms() != null)
+                .flatMap(n -> n.getNameForms().stream())
+                .filter(n -> n.getParts() != null)
+                .flatMap(nf -> nf.getParts().stream())
+                .filter(n -> n.getType() !=  null && n.getType().equals(namePartType.toQNameURI()))
                 .map(NamePart::getValue)
                 .toList();
     }

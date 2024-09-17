@@ -5,11 +5,11 @@ public class Statistics {
     public Long nodesCreated = 0L;
     public Long relationshipsCreated = 0L;
 
-    public void addNodesCreated(Long nodesCreated) {
+    public void addNodesCreated(int nodesCreated) {
         this.nodesCreated += nodesCreated;
     }
 
-    public void addRelationshipsCreated(Long relationshipsCreated) {
+    public void addRelationshipsCreated(int relationshipsCreated) {
         this.relationshipsCreated += relationshipsCreated;
     }
 }
