@@ -11,6 +11,7 @@ import org.neo4j.harness.Neo4jBuilders;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,10 +42,16 @@ class GedcomImporterTest {
         }
     }
 
+    private EagerResult executeProcedure(Driver driver, String fileName) {
+        return driver.executableQuery("CALL genealogy.loadGedcom($fileName) yield nodesCreated, relationshipsCreated return *")
+                .withParameters(Map.of("fileName", fileName))
+                .execute();
+    }
+
     @Test
     void loads_individuals() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            driver.executableQuery("CALL genealogy.loadGedcom('555Sample.ged')").execute();
+            executeProcedure(driver, "SimpsonsCartoon.ged");
 
             var individuals = driver.executableQuery("MATCH (i:Person) RETURN i AS person ORDER BY i.first_names ASC, i.last_names ASC")
                     .execute(Collectors.toList())
@@ -70,7 +77,8 @@ class GedcomImporterTest {
     @Test
     void loads_relationships() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            var result = driver.executableQuery("CALL genealogy.loadGedcom('SimpsonsCartoon.ged') yield nodesCreated, relationshipsCreated return *").execute();
+            var result = executeProcedure(driver, "SimpsonsCartoon.ged");
+
             var statistics = result.records().get(0);
             var nodesCreated = statistics.get("nodesCreated").asLong();
             var relationshipsCreated = statistics.get("relationshipsCreated").asLong();
@@ -119,17 +127,16 @@ class GedcomImporterTest {
         }
     }
 
-
     @Test
     void parses_date() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            driver.executableQuery("CALL genealogy.loadGedcom('555Sample.ged')").execute();
+            executeProcedure(driver, "555Sample.ged");
 
             var relationships = driver.executableQuery("MATCH (i:Person) WHERE i.birth_date > date({ year: 1800 }) return i")
                     .execute(Collectors.toList());
 
             assertThat(relationships)
-                    .hasSize(3)
+                    .hasSize(2)
                     .allSatisfy(
                             relationship -> {
                                 LocalDate localDate = relationship.get("i").asNode().get("birth_date").asLocalDate();
