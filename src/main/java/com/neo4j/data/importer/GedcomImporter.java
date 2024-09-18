@@ -1,13 +1,11 @@
 package com.neo4j.data.importer;
 
+import com.neo4j.data.importer.extractors.PersonExtractor;
 import org.folg.gedcom.parser.ModelParser;
 import org.gedcomx.Gedcomx;
-import org.gedcomx.conclusion.NamePart;
-import org.gedcomx.conclusion.Person;
 import org.gedcomx.conversion.GedcomxConversionResult;
 import org.gedcomx.conversion.gedcom.dq55.GedcomMapper;
 import org.gedcomx.conversion.gedcom.dq55.MappingConfig;
-import org.gedcomx.types.NamePartType;
 import org.gedcomx.types.RelationshipType;
 import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.Config;
@@ -20,7 +18,6 @@ import org.xml.sax.SAXParseException;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -44,11 +41,7 @@ public class GedcomImporter {
 
         try (Transaction tx = db.beginTx()) {
             modelX.getPersons().forEach(person -> {
-                var attributes = Map.of(
-                        "first_names", extractNames(person, NamePartType.Given),
-                        "last_names", extractNames(person, NamePartType.Surname),
-                        "id", person.getId()
-                );
+                var attributes = new PersonExtractor(person).extract();
                 var personsStats = tx.execute("CREATE (i:Person) SET i = $attributes", Map.of("attributes", attributes))
                         .getQueryStatistics();
 
@@ -57,7 +50,6 @@ public class GedcomImporter {
             });
 
             modelX.getRelationships().forEach(relationship -> {
-                RelationshipType.Couple.toQNameURI();
 
                 var person1 = modelX.findPerson(relationship.getPerson1().getResource());
                 var person2 = modelX.findPerson(relationship.getPerson2().getResource());
@@ -100,17 +92,6 @@ public class GedcomImporter {
         return Stream.of(statistics);
     }
 
-    private static List<String> extractNames(Person person, NamePartType namePartType) {
-        return person.getNames().stream()
-                .filter(n -> n.getNameForms() != null)
-                .flatMap(n -> n.getNameForms().stream())
-                .filter(n -> n.getParts() != null)
-                .flatMap(nf -> nf.getParts().stream())
-                .filter(n -> n.getType() !=  null && n.getType().equals(namePartType.toQNameURI()))
-                .map(NamePart::getValue)
-                .toList();
-    }
-
     public static Gedcomx convertGedcomFile(String filePath) throws IOException, SAXParseException {
         var modelParser = new ModelParser();
         var gedcomFile = new File(filePath);
@@ -128,6 +109,4 @@ public class GedcomImporter {
         var fileRoot = config.get(GraphDatabaseSettings.load_csv_file_url_root);
         return fileRoot + "/" + fileName;
     }
-
-
 }
