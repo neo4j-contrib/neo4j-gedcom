@@ -48,6 +48,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+        <dependency>
+            <groupId>com.joestelmach</groupId>
+            <artifactId>natty</artifactId>
+            <version>0.13</version>
+        </dependency>
+
         <!--        test-->
         <dependency>
             <groupId>org.neo4j.test</groupId>

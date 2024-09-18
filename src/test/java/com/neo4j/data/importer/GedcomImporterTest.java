@@ -9,6 +9,7 @@ import org.neo4j.harness.Neo4j;
 import org.neo4j.harness.Neo4jBuilders;
 
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -43,7 +44,7 @@ class GedcomImporterTest {
     @Test
     void loads_individuals() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            driver.executableQuery("CALL genealogy.loadGedcom('SimpsonsCartoon.ged')").execute();
+            driver.executableQuery("CALL genealogy.loadGedcom('555Sample.ged')").execute();
 
             var individuals = driver.executableQuery("MATCH (i:Person) RETURN i AS person ORDER BY i.first_names ASC, i.last_names ASC")
                     .execute(Collectors.toList())
@@ -114,6 +115,26 @@ class GedcomImporterTest {
                             getFamilyRelation("IS_CHILD_OF", "Selma", "Bouvier", "Clancy", "Bouvier"),
                             getFamilyRelation("IS_CHILD_OF", "Patty", "Bouvier", "Jacqueline", "Bouvier"),
                             getFamilyRelation("IS_CHILD_OF", "Patty", "Bouvier", "Clancy", "Bouvier")
+                    );
+        }
+    }
+
+
+    @Test
+    void parses_date() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            driver.executableQuery("CALL genealogy.loadGedcom('555Sample.ged')").execute();
+
+            var relationships = driver.executableQuery("MATCH (i:Person) WHERE i.birth_date > date({ year: 1800 }) return i")
+                    .execute(Collectors.toList());
+
+            assertThat(relationships)
+                    .hasSize(3)
+                    .allSatisfy(
+                            relationship -> {
+                                LocalDate localDate = relationship.get("i").asNode().get("birth_date").asLocalDate();
+                                assertThat(localDate.getYear()).isGreaterThan(1800);
+                            }
                     );
         }
     }
