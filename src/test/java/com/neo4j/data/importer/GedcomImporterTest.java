@@ -4,7 +4,7 @@ import org.junit.jupiter.api.*;
 import org.neo4j.configuration.GraphDatabaseSettings;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
-import org.neo4j.driver.types.Relationship;
+import org.neo4j.driver.types.Node;
 import org.neo4j.harness.Neo4j;
 import org.neo4j.harness.Neo4jBuilders;
 
@@ -48,7 +48,7 @@ class GedcomImporterTest {
             var individuals = driver.executableQuery("MATCH (i:Person) RETURN i AS person ORDER BY i.first_names ASC, i.last_names ASC")
                     .execute(Collectors.toList())
                     .stream()
-                    .map(GedcomImporterTest::asIndividuals);
+                    .map(record -> asPersons(record, "person"));
 
             assertThat(individuals).containsExactly(
                     new Person(List.of("Abraham"), List.of("Simpson")),
@@ -74,7 +74,7 @@ class GedcomImporterTest {
             var nodesCreated = statistics.get("nodesCreated").asLong();
             var relationshipsCreated = statistics.get("relationshipsCreated").asLong();
 
-            var relationships = driver.executableQuery("MATCH (i:Person)-[r]->(j:Person) return r")
+            var relationships = driver.executableQuery("MATCH (i:Person)-[r]->(j:Person) return r, i, j")
                     .execute(Collectors.toList())
                     .stream()
                     .map(GedcomImporterTest::asRelationships)
@@ -95,7 +95,31 @@ class GedcomImporterTest {
             assertThat(relationshipsCreated)
                     .isEqualTo(17);
 
+            assertThat(relationships)
+                    .containsExactlyInAnyOrder(
+                            getFamilyRelation("IS_MARRIED_TO", "Homer", "Simpson", "Marge", "Simpson"),
+                            getFamilyRelation("IS_MARRIED_TO", "Abraham", "Simpson", "Mona", "Simpson"),
+                            getFamilyRelation("IS_MARRIED_TO", "Clancy", "Bouvier", "Jacqueline", "Bouvier"),
+                            getFamilyRelation("IS_CHILD_OF", "Homer", "Simpson", "Abraham", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Homer", "Simpson", "Mona", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Marge", "Simpson", "Clancy", "Bouvier"),
+                            getFamilyRelation("IS_CHILD_OF", "Marge", "Simpson", "Jacqueline", "Bouvier"),
+                            getFamilyRelation("IS_CHILD_OF", "Lisa", "Simpson", "Marge", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Lisa", "Simpson", "Homer", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Bart", "Simpson", "Marge", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Bart", "Simpson", "Homer", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Maggie", "Simpson", "Marge", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Maggie", "Simpson", "Homer", "Simpson"),
+                            getFamilyRelation("IS_CHILD_OF", "Selma", "Bouvier", "Jacqueline", "Bouvier"),
+                            getFamilyRelation("IS_CHILD_OF", "Selma", "Bouvier", "Clancy", "Bouvier"),
+                            getFamilyRelation("IS_CHILD_OF", "Patty", "Bouvier", "Jacqueline", "Bouvier"),
+                            getFamilyRelation("IS_CHILD_OF", "Patty", "Bouvier", "Clancy", "Bouvier")
+                    );
         }
+    }
+
+    private static FamilyRelation getFamilyRelation(String relType, String p1FirstName, String p1LastName, String p2FirstName, String p2LastName) {
+        return new FamilyRelation(relType, new Person(List.of(p1FirstName), List.of(p1LastName)), new Person(List.of(p2FirstName), List.of(p2LastName)));
     }
 
     private static Path pathOfResource(String classpathResource) throws Exception {
@@ -104,15 +128,23 @@ class GedcomImporterTest {
         );
     }
 
-    private static Person asIndividuals(Record record) {
-        var person = record.get("person").asNode();
+    private static Person asPersons(Record record, String nodeName) {
+        var person = record.get(nodeName).asNode();
         return new Person(
-                person.get("first_names").asList(Value::asString),
-                person.get("last_names").asList(Value::asString));
+                getNames(person, "first_names"),
+                getNames(person, "last_names"));
     }
 
-    private static Relationship asRelationships(Record record) {
-        return record.get("r").asRelationship();
+    private static List<String> getNames(Node person, String namePart) {
+        return person.get(namePart).asList(Value::asString);
+    }
+
+    private static FamilyRelation asRelationships(Record record) {
+        var rel = record.get("r").asRelationship();
+        return new FamilyRelation(rel.type(), asPersons(record, "i"), asPersons(record, "j"));
+    }
+
+    record FamilyRelation(String type, Person person1, Person person2) {
     }
 
     record Person(List<String> firstNames, List<String> lastNames) {
