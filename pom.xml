@@ -33,19 +33,9 @@
         </dependency>
 
         <dependency>
-            <groupId>org.gedcomx</groupId>
-            <artifactId>gedcom5-conversion</artifactId>
-            <version>1.13.0</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>jsr311-api</artifactId>
-                    <groupId>javax.ws.rs</groupId>
-                </exclusion>
-                <exclusion>
-                    <artifactId>logback-classic</artifactId>
-                    <groupId>ch.qos.logback</groupId>
-                </exclusion>
-            </exclusions>
+            <groupId>org.familysearch.gedcom</groupId>
+            <artifactId>gedcom</artifactId>
+            <version>1.14.0</version>
         </dependency>
 
         <dependency>

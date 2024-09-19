@@ -1,15 +1,21 @@
 package com.neo4j.data.importer;
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.neo4j.configuration.GraphDatabaseSettings;
-import org.neo4j.driver.*;
+import org.neo4j.driver.Driver;
+import org.neo4j.driver.EagerResult;
+import org.neo4j.driver.GraphDatabase;
 import org.neo4j.driver.Record;
+import org.neo4j.driver.Value;
 import org.neo4j.driver.types.Node;
 import org.neo4j.harness.Neo4j;
 import org.neo4j.harness.Neo4jBuilders;
 
 import java.nio.file.Path;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -53,23 +59,23 @@ class GedcomImporterTest {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
             executeProcedure(driver, "SimpsonsCartoon.ged");
 
-            var individuals = driver.executableQuery("MATCH (i:Person) RETURN i AS person ORDER BY i.first_names ASC, i.last_names ASC")
+            var individuals = driver.executableQuery("MATCH (person:Person) RETURN person")
                     .execute(Collectors.toList())
                     .stream()
                     .map(record -> asPersons(record, "person"));
 
-            assertThat(individuals).containsExactly(
-                    new Person(List.of("Abraham"), List.of("Simpson")),
-                    new Person(List.of("Bart"), List.of("Simpson")),
-                    new Person(List.of("Clancy"), List.of("Bouvier")),
-                    new Person(List.of("Homer"), List.of("Simpson")),
-                    new Person(List.of("Jacqueline"), List.of("Bouvier")),
-                    new Person(List.of("Lisa"), List.of("Simpson")),
-                    new Person(List.of("Maggie"), List.of("Simpson")),
-                    new Person(List.of("Marge"), List.of("Simpson")),
-                    new Person(List.of("Mona"), List.of("Simpson")),
-                    new Person(List.of("Patty"), List.of("Bouvier")),
-                    new Person(List.of("Selma"), List.of("Bouvier"))
+            assertThat(individuals).containsExactlyInAnyOrder(
+                    new Person(List.of("Abraham"), List.of("Simpson"), "M"),
+                    new Person(List.of("Bart"), List.of("Simpson"), "M"),
+                    new Person(List.of("Clancy"), List.of("Bouvier"), "M"),
+                    new Person(List.of("Homer"), List.of("Simpson"), "M"),
+                    new Person(List.of("Jacqueline"), List.of("Bouvier"), "F"),
+                    new Person(List.of("Lisa"), List.of("Simpson"), "F"),
+                    new Person(List.of("Maggie"), List.of("Simpson"), "F"),
+                    new Person(List.of("Marge"), List.of("Simpson"), "F"),
+                    new Person(List.of("Mona"), List.of("Simpson"), "F"),
+                    new Person(List.of("Patty"), List.of("Bouvier"), "F"),
+                    new Person(List.of("Selma"), List.of("Bouvier"), "F")
             );
         }
     }
@@ -104,25 +110,36 @@ class GedcomImporterTest {
             assertThat(relationshipsCreated)
                     .isEqualTo(17);
 
+            var homer = new Person(List.of("Homer"), List.of("Simpson"), "M");
+            var marge = new Person(List.of("Marge"), List.of("Simpson"), "F");
+            var abraham = new Person(List.of("Abraham"), List.of("Simpson"), "M");
+            var mona = new Person(List.of("Mona"), List.of("Simpson"), "F");
+            var clancy = new Person(List.of("Clancy"), List.of("Bouvier"), "M");
+            var jacqueline = new Person(List.of("Jacqueline"), List.of("Bouvier"), "F");
+            var lisa = new Person(List.of("Lisa"), List.of("Simpson"), "F");
+            var bart = new Person(List.of("Bart"), List.of("Simpson"), "M");
+            var maggie = new Person(List.of("Maggie"), List.of("Simpson"), "F");
+            var selma = new Person(List.of("Selma"), List.of("Bouvier"), "F");
+            var patty = new Person(List.of("Patty"), List.of("Bouvier"), "F");
             assertThat(relationships)
                     .containsExactlyInAnyOrder(
-                            getFamilyRelation("IS_MARRIED_TO", "Homer", "Simpson", "Marge", "Simpson"),
-                            getFamilyRelation("IS_MARRIED_TO", "Abraham", "Simpson", "Mona", "Simpson"),
-                            getFamilyRelation("IS_MARRIED_TO", "Clancy", "Bouvier", "Jacqueline", "Bouvier"),
-                            getFamilyRelation("IS_CHILD_OF", "Homer", "Simpson", "Abraham", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Homer", "Simpson", "Mona", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Marge", "Simpson", "Clancy", "Bouvier"),
-                            getFamilyRelation("IS_CHILD_OF", "Marge", "Simpson", "Jacqueline", "Bouvier"),
-                            getFamilyRelation("IS_CHILD_OF", "Lisa", "Simpson", "Marge", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Lisa", "Simpson", "Homer", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Bart", "Simpson", "Marge", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Bart", "Simpson", "Homer", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Maggie", "Simpson", "Marge", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Maggie", "Simpson", "Homer", "Simpson"),
-                            getFamilyRelation("IS_CHILD_OF", "Selma", "Bouvier", "Jacqueline", "Bouvier"),
-                            getFamilyRelation("IS_CHILD_OF", "Selma", "Bouvier", "Clancy", "Bouvier"),
-                            getFamilyRelation("IS_CHILD_OF", "Patty", "Bouvier", "Jacqueline", "Bouvier"),
-                            getFamilyRelation("IS_CHILD_OF", "Patty", "Bouvier", "Clancy", "Bouvier")
+                            familyRel(homer, "IS_MARRIED_TO", marge),
+                            familyRel(abraham, "IS_MARRIED_TO", mona),
+                            familyRel(clancy, "IS_MARRIED_TO", jacqueline),
+                            familyRel(homer, "IS_CHILD_OF", abraham),
+                            familyRel(homer, "IS_CHILD_OF", mona),
+                            familyRel(marge, "IS_CHILD_OF", clancy),
+                            familyRel(marge, "IS_CHILD_OF", jacqueline),
+                            familyRel(lisa, "IS_CHILD_OF", marge),
+                            familyRel(lisa, "IS_CHILD_OF", homer),
+                            familyRel(bart, "IS_CHILD_OF", marge),
+                            familyRel(bart, "IS_CHILD_OF", homer),
+                            familyRel(maggie, "IS_CHILD_OF", marge),
+                            familyRel(maggie, "IS_CHILD_OF", homer),
+                            familyRel(selma, "IS_CHILD_OF", jacqueline),
+                            familyRel(selma, "IS_CHILD_OF", clancy),
+                            familyRel(patty, "IS_CHILD_OF", jacqueline),
+                            familyRel(patty, "IS_CHILD_OF", clancy)
                     );
         }
     }
@@ -147,8 +164,8 @@ class GedcomImporterTest {
         }
     }
 
-    private static FamilyRelation getFamilyRelation(String relType, String p1FirstName, String p1LastName, String p2FirstName, String p2LastName) {
-        return new FamilyRelation(relType, new Person(List.of(p1FirstName), List.of(p1LastName)), new Person(List.of(p2FirstName), List.of(p2LastName)));
+    private static FamilyRelation familyRel(Person person1, String relType, Person person2) {
+        return new FamilyRelation(relType, person1, person2);
     }
 
     private static Path pathOfResource(String classpathResource) throws Exception {
@@ -161,7 +178,8 @@ class GedcomImporterTest {
         var person = record.get(nodeName).asNode();
         return new Person(
                 getNames(person, "first_names"),
-                getNames(person, "last_names"));
+                getNames(person, "last_names"),
+                person.get("gender").asString());
     }
 
     private static List<String> getNames(Node person, String namePart) {
@@ -176,6 +194,6 @@ class GedcomImporterTest {
     record FamilyRelation(String type, Person person1, Person person2) {
     }
 
-    record Person(List<String> firstNames, List<String> lastNames) {
+    record Person(List<String> firstNames, List<String> lastNames, String gender) {
     }
 }

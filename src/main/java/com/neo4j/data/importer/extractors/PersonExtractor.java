@@ -1,16 +1,22 @@
 package com.neo4j.data.importer.extractors;
 
 import com.joestelmach.natty.Parser;
-import org.gedcomx.conclusion.Date;
-import org.gedcomx.conclusion.NamePart;
-import org.gedcomx.conclusion.Person;
-import org.gedcomx.conclusion.PlaceReference;
-import org.gedcomx.types.FactType;
-import org.gedcomx.types.NamePartType;
+import org.folg.gedcom.model.EventFact;
+import org.folg.gedcom.model.Name;
+import org.folg.gedcom.model.Person;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class PersonExtractor {
 
@@ -28,40 +34,38 @@ public class PersonExtractor {
         var id = person.getId();
         attributes.put("id", id);
 
-        var firstNames = extractNames(person, NamePartType.Given);
-        Optional.ofNullable(firstNames).ifPresent(fN -> attributes.put("first_names", fN));
+        var firstNames = extractNames(person, Name::getGiven);
+        if (!firstNames.isEmpty()) {
+            attributes.put("first_names", firstNames);
+        }
 
-        var surnames = extractNames(person, NamePartType.Surname);
-        Optional.ofNullable(surnames).ifPresent(sN -> attributes.put("last_names", sN));
+        var surnames = extractNames(person, Name::getSurname);
+        surnames.addAll(extractNames(person, Name::getMarriedName));
+        if (!surnames.isEmpty()) {
+            attributes.put("last_names", surnames);
+        }
 
-        var sex = extractGender(person);
-        Optional.ofNullable(sex).ifPresent(g -> attributes.put("gender", g));
+        extractGender(person).ifPresent(g -> attributes.put("gender", g));
 
-        Arrays.stream(FactType.values()).forEach( fact -> extractFact(fact, attributes));
+        person.getEventsFacts()
+                .forEach(eventFact -> {
+                    String factName = eventFact.getDisplayType().toLowerCase(Locale.ROOT);
+                    String date = eventFact.getDate();
+                    if (date != null) {
+                        attributes.put(String.format("raw_%s_date", factName), date);
+                        var localDate = parseLocalDate(date);
+                        if (localDate != null) {
+                            attributes.put(String.format("%s_date", factName), localDate);
+                        }
+                    }
+
+                    String place = eventFact.getPlace();
+                    if (place != null) {
+                        attributes.put(factName + "_" + "location", place);
+                    }
+                });
 
         return attributes;
-    }
-
-    private void extractFact(FactType factType, Map<String, Object> attributes) {
-        var fact = person.getFirstFactOfType(factType);
-        if (fact == null) {
-            return;
-        }
-
-        var factName = factType.name().toLowerCase(Locale.ROOT);
-        var date = fact.getDate();
-        if (date != null) {
-            var rawDate = date.getOriginal();
-            var localDate = parseLocalDate(rawDate);
-
-            attributes.put(String.format("raw_%s_date", factName), rawDate);
-            Optional.ofNullable(localDate).ifPresent(d -> attributes.put(String.format("%s_date", factName), d));
-        }
-        var place = fact.getPlace();
-        if (place != null) {
-            var location = place.getOriginal();
-            Optional.ofNullable(location).ifPresent(d -> attributes.put(factName + "_" + "location", d));
-        }
     }
 
     private LocalDate parseLocalDate(String date) {
@@ -82,27 +86,28 @@ public class PersonExtractor {
         return LocalDate.ofInstant(parsedDate.toInstant(), ZoneId.systemDefault());
     }
 
-    private static String extractGender(Person person) {
-        var gender = person.getGender();
-        if (gender == null || gender.getKnownType() == null) return null;
-        return gender.getKnownType().toString();
+    private static Optional<String> extractGender(Person person) {
+        return person.getEventsFacts()
+                .stream()
+                .filter(eventFact -> eventFact.getTag().equals("SEX"))
+                .map(EventFact::getValue)
+                .findFirst();
     }
 
-    private static List<String> extractNames(Person person, NamePartType namePartType) {
-        return person.getNames().stream()
-                .filter(n -> n.getNameForms() != null)
-                .flatMap(n -> n.getNameForms().stream())
-                .filter(n -> n.getParts() != null)
-                .flatMap(nf -> nf.getParts().stream())
-                .filter(n -> n.getType() != null && n.getType().equals(namePartType.toQNameURI()))
-                .map(NamePart::getValue)
-                .map(name -> {
-                    if (name.startsWith("\"") && name.endsWith("\"")){
-                        return name.substring(1, name.length()-1);
+    private static List<String> extractNames(Person person, Function<Name, String> nameFn) {
+        return person.getNames()
+                .stream()
+                .flatMap(personName -> {
+                    String name = nameFn.apply(personName);
+                    if (name == null) {
+                        return Stream.empty();
                     }
-                    return name;
+                    if (name.startsWith("\"") && name.endsWith("\"")) {
+                        return Stream.of(name.substring(1, name.length() - 1));
+                    }
+                    return Stream.of(name);
                 })
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
 }

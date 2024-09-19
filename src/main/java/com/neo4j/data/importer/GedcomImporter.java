@@ -1,23 +1,26 @@
 package com.neo4j.data.importer;
 
+import com.neo4j.data.importer.Lists.Pair;
 import com.neo4j.data.importer.extractors.PersonExtractor;
+import org.folg.gedcom.model.Gedcom;
+import org.folg.gedcom.model.Person;
+import org.folg.gedcom.model.SpouseRef;
 import org.folg.gedcom.parser.ModelParser;
-import org.gedcomx.Gedcomx;
-import org.gedcomx.conversion.GedcomxConversionResult;
-import org.gedcomx.conversion.gedcom.dq55.GedcomMapper;
-import org.gedcomx.conversion.gedcom.dq55.MappingConfig;
-import org.gedcomx.types.RelationshipType;
 import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.Config;
 import org.neo4j.configuration.GraphDatabaseSettings;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.logging.Log;
-import org.neo4j.procedure.*;
+import org.neo4j.procedure.Context;
+import org.neo4j.procedure.Mode;
+import org.neo4j.procedure.Name;
+import org.neo4j.procedure.Procedure;
 import org.xml.sax.SAXParseException;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -35,12 +38,12 @@ public class GedcomImporter {
     @Procedure(value = "genealogy.loadGedcom", mode = Mode.WRITE)
     public Stream<Statistics> loadGedcom(@Name("file") String file) throws IOException, SAXParseException {
         var filePath = rebuildPath(file);
-        var modelX = convertGedcomFile(filePath);
+        var model = convertGedcomFile(filePath);
 
         var statistics = new Statistics();
 
         try (Transaction tx = db.beginTx()) {
-            modelX.getPersons().forEach(person -> {
+            model.getPeople().forEach(person -> {
                 var attributes = new PersonExtractor(person).extract();
                 var personsStats = tx.execute("CREATE (i:Person) SET i = $attributes", Map.of("attributes", attributes))
                         .getQueryStatistics();
@@ -49,40 +52,30 @@ public class GedcomImporter {
 
             });
 
-            modelX.getRelationships().forEach(relationship -> {
-
-                var person1 = modelX.findPerson(relationship.getPerson1().getResource());
-                var person2 = modelX.findPerson(relationship.getPerson2().getResource());
-
-                if (person1 == null || person2 == null) {
-                    logger.debug("Unable to find person(s) for relationship: {}", relationship.getId());
-                    return;
-                }
-
-                if (relationship.getType().equals(RelationshipType.Couple.toQNameURI())) {
+            model.getFamilies().forEach(family -> {
+                List<String> spouseReferences1 = family.getHusbandRefs().stream().map(SpouseRef::getRef).toList();
+                List<String> spouseReferences2 = family.getWifeRefs().stream().map(SpouseRef::getRef).toList();
+                List<Pair<String, String>> couples = Lists.crossProduct(spouseReferences1, spouseReferences2);
+                List<String> childrenReferences = family.getChildRefs().stream().map(SpouseRef::getRef).toList();
+                couples.forEach(couple -> {
                     var stats = tx.execute("""
-                                    MATCH (h:Person {id: $p1}), (w:Person {id: $p2})
-                                    CREATE (h)-[:IS_MARRIED_TO]->(w)""",
+                                    MATCH (spouse1:Person {id: $spouseId1}), (spouse2:Person {id: $spouseId2})
+                                    CREATE (spouse1)-[:IS_MARRIED_TO]->(spouse2)
+                                    WITH spouse1, spouse2
+                                    UNWIND $childIds AS childId
+                                    MATCH (child:Person {id: childId})
+                                    CREATE (child)-[:IS_CHILD_OF]->(spouse1)
+                                    CREATE (child)-[:IS_CHILD_OF]->(spouse2)
+                                    """,
                             Map.of(
-                                    "p1", person1.getId(),
-                                    "p2", person2.getId()
+                                    "spouseId1", couple.left(),
+                                    "spouseId2", couple.right(),
+                                    "childIds", childrenReferences
                             )
                     ).getQueryStatistics();
 
                     statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
-
-                } else if (relationship.getType().equals(RelationshipType.ParentChild.toQNameURI())) {
-                    var stats = tx.execute("""
-                                    MATCH (c:Person {id: $child}), (p:Person {id: $parent})
-                                    CREATE (c)-[:IS_CHILD_OF]->(p)""",
-                            Map.of(
-                                    "parent", person1.getId(),
-                                    "child", person2.getId()
-                            )
-                    ).getQueryStatistics();
-
-                    statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
-                }
+                });
             });
 
             tx.commit();
@@ -92,16 +85,12 @@ public class GedcomImporter {
         return Stream.of(statistics);
     }
 
-    public static Gedcomx convertGedcomFile(String filePath) throws IOException, SAXParseException {
+    public static Gedcom convertGedcomFile(String filePath) throws IOException, SAXParseException {
         var modelParser = new ModelParser();
         var gedcomFile = new File(filePath);
-        org.folg.gedcom.model.Gedcom gedcom = modelParser.parseGedcom(gedcomFile);
+        var gedcom = modelParser.parseGedcom(gedcomFile);
         gedcom.createIndexes();
-
-        MappingConfig config = new MappingConfig(gedcomFile.getName(), false);
-        var mapper = new GedcomMapper(config);
-        GedcomxConversionResult result = mapper.toGedcomx(gedcom);
-        return result.getDataset();
+        return gedcom;
     }
 
     private String rebuildPath(String fileName) {
