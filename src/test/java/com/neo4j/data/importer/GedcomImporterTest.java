@@ -139,8 +139,9 @@ class GedcomImporterTest {
                     .hasSize(2)
                     .allSatisfy(
                             relationship -> {
-                                LocalDate localDate = relationship.get("i").asNode().get("birth_date").asLocalDate();
-                                assertThat(localDate.getYear()).isGreaterThan(1800);
+                                var node = relationship.get("i").asNode();
+                                assertThat(node.get("raw_birth_date").asString()).matches(".*\\d{4}.*");
+                                assertThat(node.get("birth_date").asLocalDate().getYear()).isGreaterThan(1800);
                             }
                     );
         }
