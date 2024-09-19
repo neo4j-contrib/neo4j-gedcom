@@ -1,8 +1,10 @@
 package com.neo4j.data.importer.extractors;
 
 import com.joestelmach.natty.Parser;
+import org.gedcomx.conclusion.Date;
 import org.gedcomx.conclusion.NamePart;
 import org.gedcomx.conclusion.Person;
+import org.gedcomx.conclusion.PlaceReference;
 import org.gedcomx.types.FactType;
 import org.gedcomx.types.NamePartType;
 
@@ -46,15 +48,19 @@ public class PersonExtractor {
             return;
         }
 
-        if (fact.getDate() != null) {
-            var date = fact.getDate().getOriginal();
-            LocalDate localDate = parseLocalDate(date);
+        var factName = factType.name().toLowerCase(Locale.ROOT);
+        var date = fact.getDate();
+        if (date != null) {
+            var rawDate = date.getOriginal();
+            var localDate = parseLocalDate(rawDate);
 
-            Optional.ofNullable(localDate).ifPresent(d -> attributes.put(factType.name().toLowerCase(Locale.ROOT) + "_" + "date", d));
+            attributes.put(String.format("raw_%s_date", factName), rawDate);
+            Optional.ofNullable(localDate).ifPresent(d -> attributes.put(String.format("%s_date", factName), d));
         }
-        if (fact.getPlace() != null) {
-            var location = fact.getPlace().getOriginal();
-            Optional.ofNullable(location).ifPresent(d -> attributes.put(factType.name().toLowerCase(Locale.ROOT) + "_" + "location", d));
+        var place = fact.getPlace();
+        if (place != null) {
+            var location = place.getOriginal();
+            Optional.ofNullable(location).ifPresent(d -> attributes.put(factName + "_" + "location", d));
         }
     }
 
