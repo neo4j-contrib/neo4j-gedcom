@@ -1,5 +1,11 @@
 package com.neo4j.data.importer;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -14,13 +20,6 @@ import org.neo4j.driver.Value;
 import org.neo4j.driver.types.Node;
 import org.neo4j.harness.Neo4j;
 import org.neo4j.harness.Neo4jBuilders;
-
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GedcomImporterTest {
@@ -49,7 +48,8 @@ class GedcomImporterTest {
     }
 
     private EagerResult executeProcedure(Driver driver, String fileName) {
-        return driver.executableQuery("CALL genealogy.loadGedcom($fileName) yield nodesCreated, relationshipsCreated return *")
+        return driver.executableQuery(
+                        "CALL genealogy.loadGedcom($fileName) yield nodesCreated, relationshipsCreated return *")
                 .withParameters(Map.of("fileName", fileName))
                 .execute();
     }
@@ -59,24 +59,23 @@ class GedcomImporterTest {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
             executeProcedure(driver, "SimpsonsCartoon.ged");
 
-            var individuals = driver.executableQuery("MATCH (person:Person) RETURN person")
-                    .execute(Collectors.toList())
-                    .stream()
-                    .map(record -> asPersons(record, "person"));
+            var individuals =
+                    driver.executableQuery("MATCH (person:Person) RETURN person").execute(Collectors.toList()).stream()
+                            .map(record -> asPersons(record, "person"));
 
-            assertThat(individuals).containsExactlyInAnyOrder(
-                    new Person(List.of("Abraham"), List.of("Simpson"), "M"),
-                    new Person(List.of("Bart"), List.of("Simpson"), "M"),
-                    new Person(List.of("Clancy"), List.of("Bouvier"), "M"),
-                    new Person(List.of("Homer"), List.of("Simpson"), "M"),
-                    new Person(List.of("Jacqueline"), List.of("Bouvier"), "F"),
-                    new Person(List.of("Lisa"), List.of("Simpson"), "F"),
-                    new Person(List.of("Maggie"), List.of("Simpson"), "F"),
-                    new Person(List.of("Marge"), List.of("Simpson"), "F"),
-                    new Person(List.of("Mona"), List.of("Simpson"), "F"),
-                    new Person(List.of("Patty"), List.of("Bouvier"), "F"),
-                    new Person(List.of("Selma"), List.of("Bouvier"), "F")
-            );
+            assertThat(individuals)
+                    .containsExactlyInAnyOrder(
+                            new Person(List.of("Abraham"), List.of("Simpson"), "M"),
+                            new Person(List.of("Bart"), List.of("Simpson"), "M"),
+                            new Person(List.of("Clancy"), List.of("Bouvier"), "M"),
+                            new Person(List.of("Homer"), List.of("Simpson"), "M"),
+                            new Person(List.of("Jacqueline"), List.of("Bouvier"), "F"),
+                            new Person(List.of("Lisa"), List.of("Simpson"), "F"),
+                            new Person(List.of("Maggie"), List.of("Simpson"), "F"),
+                            new Person(List.of("Marge"), List.of("Simpson"), "F"),
+                            new Person(List.of("Mona"), List.of("Simpson"), "F"),
+                            new Person(List.of("Patty"), List.of("Bouvier"), "F"),
+                            new Person(List.of("Selma"), List.of("Bouvier"), "F"));
         }
     }
 
@@ -89,7 +88,8 @@ class GedcomImporterTest {
             var nodesCreated = statistics.get("nodesCreated").asLong();
             var relationshipsCreated = statistics.get("relationshipsCreated").asLong();
 
-            var relationships = driver.executableQuery("MATCH (i:Person)-[r]->(j:Person) return r, i, j")
+            var relationships = driver
+                    .executableQuery("MATCH (i:Person)-[r]->(j:Person) return r, i, j")
                     .execute(Collectors.toList())
                     .stream()
                     .map(GedcomImporterTest::asRelationships)
@@ -104,11 +104,9 @@ class GedcomImporterTest {
                     .filteredOn(r -> r.type().equals("IS_CHILD_OF"))
                     .hasSize(14);
 
-            assertThat(nodesCreated)
-                    .isEqualTo(11);
+            assertThat(nodesCreated).isEqualTo(11);
 
-            assertThat(relationshipsCreated)
-                    .isEqualTo(17);
+            assertThat(relationshipsCreated).isEqualTo(17);
 
             var homer = new Person(List.of("Homer"), List.of("Simpson"), "M");
             var marge = new Person(List.of("Marge"), List.of("Simpson"), "F");
@@ -139,8 +137,7 @@ class GedcomImporterTest {
                             familyRel(selma, "IS_CHILD_OF", jacqueline),
                             familyRel(selma, "IS_CHILD_OF", clancy),
                             familyRel(patty, "IS_CHILD_OF", jacqueline),
-                            familyRel(patty, "IS_CHILD_OF", clancy)
-                    );
+                            familyRel(patty, "IS_CHILD_OF", clancy));
         }
     }
 
@@ -149,18 +146,15 @@ class GedcomImporterTest {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
             executeProcedure(driver, "555Sample.ged");
 
-            var relationships = driver.executableQuery("MATCH (i:Person) WHERE i.birth_date > date({ year: 1800 }) return i")
+            var relationships = driver.executableQuery(
+                            "MATCH (i:Person) WHERE i.birth_date > date({ year: 1800 }) return i")
                     .execute(Collectors.toList());
 
-            assertThat(relationships)
-                    .hasSize(2)
-                    .allSatisfy(
-                            relationship -> {
-                                var node = relationship.get("i").asNode();
-                                assertThat(node.get("raw_birth_date").asString()).matches(".*\\d{4}.*");
-                                assertThat(node.get("birth_date").asLocalDate().getYear()).isGreaterThan(1800);
-                            }
-                    );
+            assertThat(relationships).hasSize(2).allSatisfy(relationship -> {
+                var node = relationship.get("i").asNode();
+                assertThat(node.get("raw_birth_date").asString()).matches(".*\\d{4}.*");
+                assertThat(node.get("birth_date").asLocalDate().getYear()).isGreaterThan(1800);
+            });
         }
     }
 
@@ -169,9 +163,10 @@ class GedcomImporterTest {
     }
 
     private static Path pathOfResource(String classpathResource) throws Exception {
-        return Path.of(
-                Thread.currentThread().getContextClassLoader().getResource(classpathResource).toURI()
-        );
+        return Path.of(Thread.currentThread()
+                .getContextClassLoader()
+                .getResource(classpathResource)
+                .toURI());
     }
 
     private static Person asPersons(Record record, String nodeName) {
@@ -191,9 +186,7 @@ class GedcomImporterTest {
         return new FamilyRelation(rel.type(), asPersons(record, "i"), asPersons(record, "j"));
     }
 
-    record FamilyRelation(String type, Person person1, Person person2) {
-    }
+    record FamilyRelation(String type, Person person1, Person person2) {}
 
-    record Person(List<String> firstNames, List<String> lastNames, String gender) {
-    }
+    record Person(List<String> firstNames, List<String> lastNames, String gender) {}
 }
