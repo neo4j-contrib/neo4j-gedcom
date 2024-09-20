@@ -165,7 +165,7 @@ class GedcomImporterTest {
                             """
                             MATCH (i: Person)-[r:IS_MARRIED_TO]->(j: Person)
                             WHERE i.gender = j.gender
-                            return i, r, j
+                            RETURN i, r, j
                             """)
                     .execute(Collectors.toList())
                     .stream()
@@ -179,7 +179,7 @@ class GedcomImporterTest {
     }
 
     @Test
-    void process_remarriages() {
+    void processes_remarriages() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
             executeProcedure(driver, "REMARR.ged");
 
@@ -188,8 +188,8 @@ class GedcomImporterTest {
                             """
                             MATCH (i: Person)-[r:IS_MARRIED_TO]-(j: Person)
                             MATCH (i)-[:IS_MARRIED_TO]-(k: Person)
-                            where id(j) <> id(k)
-                            return i, r, j""")
+                            WHERE id(j) <> id(k)
+                            RETURN i, r, j""")
                     .execute(Collectors.toList())
                     .stream()
                     .map(GedcomImporterTest::asRelationships)
