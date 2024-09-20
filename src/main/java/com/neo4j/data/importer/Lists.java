@@ -6,11 +6,9 @@ class Lists {
 
     public static <LEFT, RIGHT> List<Pair<LEFT, RIGHT>> crossProduct(List<LEFT> left, List<RIGHT> right) {
         return left.stream()
-                .flatMap(leftValue -> right.stream()
-                        .map(rightValue -> new Pair<>(leftValue, rightValue)))
+                .flatMap(leftValue -> right.stream().map(rightValue -> new Pair<>(leftValue, rightValue)))
                 .toList();
     }
 
-    public record Pair<T, U>(T left, U right) {
-    }
+    public record Pair<T, U>(T left, U right) {}
 }

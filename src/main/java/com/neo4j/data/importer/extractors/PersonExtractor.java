@@ -1,14 +1,9 @@
 package com.neo4j.data.importer.extractors;
 
 import com.joestelmach.natty.Parser;
-import org.folg.gedcom.model.EventFact;
-import org.folg.gedcom.model.Name;
-import org.folg.gedcom.model.Person;
-
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -17,6 +12,9 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.folg.gedcom.model.EventFact;
+import org.folg.gedcom.model.Name;
+import org.folg.gedcom.model.Person;
 
 public class PersonExtractor {
 
@@ -47,23 +45,22 @@ public class PersonExtractor {
 
         extractGender(person).ifPresent(g -> attributes.put("gender", g));
 
-        person.getEventsFacts()
-                .forEach(eventFact -> {
-                    String factName = eventFact.getDisplayType().toLowerCase(Locale.ROOT);
-                    String date = eventFact.getDate();
-                    if (date != null) {
-                        attributes.put(String.format("raw_%s_date", factName), date);
-                        var localDate = parseLocalDate(date);
-                        if (localDate != null) {
-                            attributes.put(String.format("%s_date", factName), localDate);
-                        }
-                    }
+        person.getEventsFacts().forEach(eventFact -> {
+            String factName = eventFact.getDisplayType().toLowerCase(Locale.ROOT);
+            String date = eventFact.getDate();
+            if (date != null) {
+                attributes.put(String.format("raw_%s_date", factName), date);
+                var localDate = parseLocalDate(date);
+                if (localDate != null) {
+                    attributes.put(String.format("%s_date", factName), localDate);
+                }
+            }
 
-                    String place = eventFact.getPlace();
-                    if (place != null) {
-                        attributes.put(factName + "_" + "location", place);
-                    }
-                });
+            String place = eventFact.getPlace();
+            if (place != null) {
+                attributes.put(factName + "_" + "location", place);
+            }
+        });
 
         return attributes;
     }
@@ -87,16 +84,14 @@ public class PersonExtractor {
     }
 
     private static Optional<String> extractGender(Person person) {
-        return person.getEventsFacts()
-                .stream()
+        return person.getEventsFacts().stream()
                 .filter(eventFact -> eventFact.getTag().equals("SEX"))
                 .map(EventFact::getValue)
                 .findFirst();
     }
 
     private static List<String> extractNames(Person person, Function<Name, String> nameFn) {
-        return person.getNames()
-                .stream()
+        return person.getNames().stream()
                 .flatMap(personName -> {
                     String name = nameFn.apply(personName);
                     if (name == null) {
@@ -109,5 +104,4 @@ public class PersonExtractor {
                 })
                 .collect(Collectors.toCollection(ArrayList::new));
     }
-
 }
