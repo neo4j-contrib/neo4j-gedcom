@@ -184,6 +184,34 @@ class GedcomImporterTest {
         }
     }
 
+    @Test
+    void process_remarriages() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            executeProcedure(driver, "REMARR.ged");
+
+            var relationships = driver.executableQuery("""
+                            MATCH (i: Person)-[r:IS_MARRIED_TO]-(j: Person)
+                            MATCH (i)-[:IS_MARRIED_TO]-(k: Person)
+                            where id(j) <> id(k)
+                            return i, r, j""")
+                    .execute(Collectors.toList())
+                    .stream()
+                    .map(GedcomImporterTest::asRelationships)
+                    .toList();
+
+            var mary = new Person(List.of("Mary"), List.of("Encore"), "F");
+            var peter = new Person(List.of("Peter"), List.of("Sweet"), "M");
+            var juan = new Person(List.of("Juan"), List.of("Donalds"), "M");
+
+            assertThat(relationships)
+                    .contains(
+                            familyRel(mary, "IS_MARRIED_TO", peter),
+                            familyRel(mary, "IS_MARRIED_TO", juan)
+                    );
+            ;
+        }
+    }
+
     private static FamilyRelation familyRel(Person person1, String relType, Person person2) {
         return new FamilyRelation(relType, person1, person2);
     }
