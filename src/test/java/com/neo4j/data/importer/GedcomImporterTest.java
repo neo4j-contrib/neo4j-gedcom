@@ -12,11 +12,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.neo4j.configuration.GraphDatabaseSettings;
-import org.neo4j.driver.Driver;
-import org.neo4j.driver.EagerResult;
-import org.neo4j.driver.GraphDatabase;
+import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
-import org.neo4j.driver.Value;
 import org.neo4j.driver.types.Node;
 import org.neo4j.harness.Neo4j;
 import org.neo4j.harness.Neo4jBuilders;
@@ -155,6 +152,56 @@ class GedcomImporterTest {
                 assertThat(node.get("raw_birth_date").asString()).matches(".*\\d{4}.*");
                 assertThat(node.get("birth_date").asLocalDate().getYear()).isGreaterThan(1800);
             });
+        }
+    }
+
+    @Test
+    void parses_same_sex_marriages() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            executeProcedure(driver, "SSMARR.ged");
+
+            var relationships = driver
+                    .executableQuery(
+                            """
+                            MATCH (i: Person)-[r:IS_MARRIED_TO]->(j: Person)
+                            WHERE i.gender = j.gender
+                            RETURN i, r, j
+                            """)
+                    .execute(Collectors.toList())
+                    .stream()
+                    .map(GedcomImporterTest::asRelationships)
+                    .toList();
+
+            var john = new Person(List.of("John"), List.of("Smith"), "M");
+            var steven = new Person(List.of("Steven"), List.of("Stevens"), "M");
+            assertThat(relationships).containsExactlyInAnyOrder(familyRel(john, "IS_MARRIED_TO", steven));
+        }
+    }
+
+    @Test
+    void processes_remarriages() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            executeProcedure(driver, "REMARR.ged");
+
+            var relationships = driver
+                    .executableQuery(
+                            """
+                            MATCH (i: Person)-[r:IS_MARRIED_TO]-(j: Person)
+                            MATCH (i)-[:IS_MARRIED_TO]-(k: Person)
+                            WHERE id(j) <> id(k)
+                            RETURN i, r, j""")
+                    .execute(Collectors.toList())
+                    .stream()
+                    .map(GedcomImporterTest::asRelationships)
+                    .toList();
+
+            var mary = new Person(List.of("Mary"), List.of("Encore"), "F");
+            var peter = new Person(List.of("Peter"), List.of("Sweet"), "M");
+            var juan = new Person(List.of("Juan"), List.of("Donalds"), "M");
+
+            assertThat(relationships)
+                    .contains(familyRel(mary, "IS_MARRIED_TO", peter), familyRel(mary, "IS_MARRIED_TO", juan));
+            ;
         }
     }
 
