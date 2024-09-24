@@ -1,7 +1,7 @@
 package com.neo4j.data.importer;
 
 import com.neo4j.data.importer.Lists.Pair;
-import com.neo4j.data.importer.extractors.PersonExtractor;
+import com.neo4j.data.importer.extractors.PersonExtractors;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -36,13 +36,13 @@ public class GedcomImporter {
     @Procedure(value = "genealogy.loadGedcom", mode = Mode.WRITE)
     public Stream<Statistics> loadGedcom(@Name("file") String file) throws IOException, SAXParseException {
         var filePath = rebuildPath(file);
-        var model = convertGedcomFile(filePath);
+        var model = loadModel(filePath);
 
+        var personExtractors = new PersonExtractors(model);
         var statistics = new Statistics();
-
         try (Transaction tx = db.beginTx()) {
             model.getPeople().forEach(person -> {
-                var attributes = new PersonExtractor(person).extract();
+                var attributes = personExtractors.get().apply(person);
                 var personsStats = tx.execute("CREATE (i:Person) SET i = $attributes", Map.of("attributes", attributes))
                         .getQueryStatistics();
 
@@ -89,7 +89,7 @@ public class GedcomImporter {
         return Stream.of(statistics);
     }
 
-    public static Gedcom convertGedcomFile(String filePath) throws IOException, SAXParseException {
+    public static Gedcom loadModel(String filePath) throws IOException, SAXParseException {
         var modelParser = new ModelParser();
         var gedcomFile = new File(filePath);
         var gedcom = modelParser.parseGedcom(gedcomFile);

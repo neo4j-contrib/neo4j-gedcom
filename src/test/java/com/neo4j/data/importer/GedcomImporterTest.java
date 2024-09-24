@@ -205,6 +205,29 @@ class GedcomImporterTest {
         }
     }
 
+    @Test
+    void parses_Heredis_preferred_name() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            executeProcedure(driver, "HeredisPreferredName.ged");
+
+            var preferredFirstNames = driver
+                    .executableQuery(
+                            """
+                            MATCH (p:Person {
+                                first_names: ["Canan", "Jane", "Françoise"],
+                                last_names: ["Doe"]
+                            })
+                            RETURN p.preferred_first_name AS name
+                            """)
+                    .execute(Collectors.toList())
+                    .stream()
+                    .map(record -> record.get("name").asString())
+                    .toList();
+
+            assertThat(preferredFirstNames).containsExactly("Jane");
+        }
+    }
+
     private static FamilyRelation familyRel(Person person1, String relType, Person person2) {
         return new FamilyRelation(relType, person1, person2);
     }
