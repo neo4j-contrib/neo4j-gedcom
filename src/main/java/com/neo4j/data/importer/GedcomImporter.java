@@ -1,14 +1,12 @@
 package com.neo4j.data.importer;
 
-import com.neo4j.data.importer.Lists.Pair;
+import com.neo4j.data.importer.extractors.FamilyExtractors;
 import com.neo4j.data.importer.extractors.PersonExtractors;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.folg.gedcom.model.Gedcom;
-import org.folg.gedcom.model.SpouseRef;
 import org.folg.gedcom.parser.ModelParser;
 import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.Config;
@@ -49,33 +47,23 @@ public class GedcomImporter {
                 statistics.addNodesCreated(personsStats.getNodesCreated());
             });
 
+            var familyExtractors = new FamilyExtractors();
             model.getFamilies().forEach(family -> {
-                List<String> spouseReferences1 =
-                        family.getHusbandRefs().stream().map(SpouseRef::getRef).toList();
-                List<String> spouseReferences2 =
-                        family.getWifeRefs().stream().map(SpouseRef::getRef).toList();
-                List<Pair<String, String>> couples = Lists.crossProduct(spouseReferences1, spouseReferences2);
-                List<String> childrenReferences =
-                        family.getChildRefs().stream().map(SpouseRef::getRef).toList();
-                couples.forEach(couple -> {
-                    var stats = tx.execute(
-                                    """
-                                    MATCH (spouse1:Person {id: $spouseId1}), (spouse2:Person {id: $spouseId2})
-                                    CREATE (spouse1)-[:IS_MARRIED_TO]->(spouse2)
-                                    WITH spouse1, spouse2
-                                    UNWIND $childIds AS childId
-                                    MATCH (child:Person {id: childId})
-                                    CREATE (child)-[:IS_CHILD_OF]->(spouse1)
-                                    CREATE (child)-[:IS_CHILD_OF]->(spouse2)
-                                    """,
-                                    Map.of(
-                                            "spouseId1", couple.left(),
-                                            "spouseId2", couple.right(),
-                                            "childIds", childrenReferences))
-                            .getQueryStatistics();
+                var stats = tx.execute(
+                                """
+                                        UNWIND $spouseIdPairs AS spousePair
+                                        MATCH (spouse1:Person {id: spousePair.id1}), (spouse2:Person {id: spousePair.id2})
+                                        CREATE (spouse1)-[:IS_MARRIED_TO]->(spouse2)
+                                        WITH spouse1, spouse2
+                                        UNWIND $childIds AS childId
+                                        MATCH (child:Person {id: childId})
+                                        CREATE (child)-[:IS_CHILD_OF]->(spouse1)
+                                        CREATE (child)-[:IS_CHILD_OF]->(spouse2)
+                                        """,
+                                familyExtractors.get().apply(family))
+                        .getQueryStatistics();
 
-                    statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
-                });
+                statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
             });
 
             tx.commit();
