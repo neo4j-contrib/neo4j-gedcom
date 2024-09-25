@@ -3,6 +3,7 @@ package com.neo4j.data.importer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -44,7 +45,7 @@ class GedcomImporterTest {
         }
     }
 
-    private EagerResult executeProcedure(Driver driver, String fileName) {
+    private EagerResult loadGedcom(Driver driver, String fileName) {
         return driver.executableQuery(
                         "CALL genealogy.loadGedcom($fileName) yield nodesCreated, relationshipsCreated return *")
                 .withParameters(Map.of("fileName", fileName))
@@ -54,7 +55,7 @@ class GedcomImporterTest {
     @Test
     void loads_individuals() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            executeProcedure(driver, "SimpsonsCartoon.ged");
+            loadGedcom(driver, "SimpsonsCartoon.ged");
 
             var individuals =
                     driver.executableQuery("MATCH (person:Person) RETURN person").execute(Collectors.toList()).stream()
@@ -79,7 +80,7 @@ class GedcomImporterTest {
     @Test
     void loads_relationships() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            var result = executeProcedure(driver, "SimpsonsCartoon.ged");
+            var result = loadGedcom(driver, "SimpsonsCartoon.ged");
 
             var statistics = result.records().get(0);
             var nodesCreated = statistics.get("nodesCreated").asLong();
@@ -94,7 +95,7 @@ class GedcomImporterTest {
 
             assertThat(relationships)
                     .hasSize(17)
-                    .filteredOn(r -> r.type().equals("IS_MARRIED_TO"))
+                    .filteredOn(r -> r.type().equals("IS_SPOUSE_OF"))
                     .hasSize(3);
 
             assertThat(relationships)
@@ -118,9 +119,9 @@ class GedcomImporterTest {
             var patty = new Person(List.of("Patty"), List.of("Bouvier"), "F");
             assertThat(relationships)
                     .containsExactlyInAnyOrder(
-                            familyRel(homer, "IS_MARRIED_TO", marge),
-                            familyRel(abraham, "IS_MARRIED_TO", mona),
-                            familyRel(clancy, "IS_MARRIED_TO", jacqueline),
+                            familyRel(homer, "IS_SPOUSE_OF", marge),
+                            familyRel(abraham, "IS_SPOUSE_OF", mona),
+                            familyRel(clancy, "IS_SPOUSE_OF", jacqueline),
                             familyRel(homer, "IS_CHILD_OF", abraham),
                             familyRel(homer, "IS_CHILD_OF", mona),
                             familyRel(marge, "IS_CHILD_OF", clancy),
@@ -139,9 +140,9 @@ class GedcomImporterTest {
     }
 
     @Test
-    void parses_date() {
+    void parses_person_event_dates() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            executeProcedure(driver, "555Sample.ged");
+            loadGedcom(driver, "555Sample.ged");
 
             var relationships = driver.executableQuery(
                             "MATCH (i:Person) WHERE i.birth_date > date({ year: 1800 }) return i")
@@ -158,12 +159,12 @@ class GedcomImporterTest {
     @Test
     void parses_same_sex_marriages() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            executeProcedure(driver, "SSMARR.ged");
+            loadGedcom(driver, "SSMARR.ged");
 
             var relationships = driver
                     .executableQuery(
                             """
-                            MATCH (i: Person)-[r:IS_MARRIED_TO]->(j: Person)
+                            MATCH (i: Person)-[r:IS_SPOUSE_OF]->(j: Person)
                             WHERE i.gender = j.gender
                             RETURN i, r, j
                             """)
@@ -174,20 +175,20 @@ class GedcomImporterTest {
 
             var john = new Person(List.of("John"), List.of("Smith"), "M");
             var steven = new Person(List.of("Steven"), List.of("Stevens"), "M");
-            assertThat(relationships).containsExactlyInAnyOrder(familyRel(john, "IS_MARRIED_TO", steven));
+            assertThat(relationships).containsExactlyInAnyOrder(familyRel(john, "IS_SPOUSE_OF", steven));
         }
     }
 
     @Test
     void processes_remarriages() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            executeProcedure(driver, "REMARR.ged");
+            loadGedcom(driver, "REMARR.ged");
 
             var relationships = driver
                     .executableQuery(
                             """
-                            MATCH (i: Person)-[r:IS_MARRIED_TO]-(j: Person)
-                            MATCH (i)-[:IS_MARRIED_TO]-(k: Person)
+                            MATCH (i: Person)-[r:IS_SPOUSE_OF]-(j: Person)
+                            MATCH (i)-[:IS_SPOUSE_OF]-(k: Person)
                             WHERE id(j) <> id(k)
                             RETURN i, r, j""")
                     .execute(Collectors.toList())
@@ -200,7 +201,7 @@ class GedcomImporterTest {
             var juan = new Person(List.of("Juan"), List.of("Donalds"), "M");
 
             assertThat(relationships)
-                    .contains(familyRel(mary, "IS_MARRIED_TO", peter), familyRel(mary, "IS_MARRIED_TO", juan));
+                    .contains(familyRel(mary, "IS_SPOUSE_OF", peter), familyRel(mary, "IS_SPOUSE_OF", juan));
             ;
         }
     }
@@ -208,7 +209,7 @@ class GedcomImporterTest {
     @Test
     void parses_Heredis_preferred_name() {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
-            executeProcedure(driver, "HeredisPreferredName.ged");
+            loadGedcom(driver, "HeredisPreferredName.ged");
 
             var preferredFirstNames = driver
                     .executableQuery(
@@ -226,6 +227,66 @@ class GedcomImporterTest {
 
             assertThat(preferredFirstNames).containsExactly("Jane");
         }
+    }
+
+    @Test
+    void parses_detailed_marriage_information() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            loadGedcom(driver, "DetailedMarriageDivorceInfo.ged");
+
+            var marriages = driver
+                    .executableQuery(
+                            """
+                            MATCH (john:Person {first_names: ["John"], last_names: ["DOE"]}),
+                                  (jane:Person {first_names: ["Jane"], last_names: ["DOE"]}),
+                                  (john)-[r:IS_MARRIED_TO]->(jane)
+                            RETURN r
+                            """)
+                    .execute(Collectors.toList())
+                    .stream()
+                    .map(record -> record.get("r").asRelationship().asMap())
+                    .toList();
+
+            assertThat(marriages)
+                    .containsExactlyInAnyOrder(
+                            Map.of(
+                                    "type", "Religious marriage",
+                                    "date", LocalDate.of(1989, 3, 2),
+                                    "raw_date", "2 MAR 1989",
+                                    "location", "Colmar,68000,Haut Rhin,Alsace,FRANCE,"),
+                            Map.of(
+                                    "date", LocalDate.of(1989, 3, 1),
+                                    "raw_date", "1 MAR 1989",
+                                    "location", "Colmar,68000,Haut Rhin,Alsace,FRANCE,"));
+        }
+        ;
+    }
+
+    @Test
+    void parses_divorce_information() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            loadGedcom(driver, "DetailedMarriageDivorceInfo.ged");
+
+            var divorces = driver
+                    .executableQuery(
+                            """
+                            MATCH (john:Person {first_names: ["John"], last_names: ["DOE"]}),
+                                  (jane:Person {first_names: ["Jane"], last_names: ["DOE"]}),
+                                  (john)-[r:DIVORCED]->(jane)
+                            RETURN r
+                            """)
+                    .execute(Collectors.toList())
+                    .stream()
+                    .map(record -> record.get("r").asRelationship().asMap())
+                    .toList();
+
+            assertThat(divorces)
+                    .containsExactlyInAnyOrder(Map.of(
+                            "date", LocalDate.of(2017, 10, 23),
+                            "raw_date", "23 OCT 2017",
+                            "location", "Strasbourg,67000,Bas Rhin,Alsace,FRANCE,"));
+        }
+        ;
     }
 
     private static FamilyRelation familyRel(Person person1, String relType, Person person2) {

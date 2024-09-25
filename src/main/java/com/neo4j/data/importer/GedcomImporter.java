@@ -1,5 +1,6 @@
 package com.neo4j.data.importer;
 
+import com.joestelmach.natty.Parser;
 import com.neo4j.data.importer.extractors.FamilyExtractors;
 import com.neo4j.data.importer.extractors.PersonExtractors;
 import java.io.File;
@@ -36,7 +37,8 @@ public class GedcomImporter {
         var filePath = rebuildPath(file);
         var model = loadModel(filePath);
 
-        var personExtractors = new PersonExtractors(model);
+        var dateParser = new Parser();
+        var personExtractors = new PersonExtractors(dateParser, model);
         var statistics = new Statistics();
         try (Transaction tx = db.beginTx()) {
             model.getPeople().forEach(person -> {
@@ -47,20 +49,30 @@ public class GedcomImporter {
                 statistics.addNodesCreated(personsStats.getNodesCreated());
             });
 
-            var familyExtractors = new FamilyExtractors();
+            var familyExtractors = new FamilyExtractors(dateParser);
             model.getFamilies().forEach(family -> {
+                var attributes = familyExtractors.get().apply(family);
                 var stats = tx.execute(
                                 """
-                                        UNWIND $spouseIdPairs AS spousePair
-                                        MATCH (spouse1:Person {id: spousePair.id1}), (spouse2:Person {id: spousePair.id2})
-                                        CREATE (spouse1)-[:IS_MARRIED_TO]->(spouse2)
+                                        UNWIND $spouseIdPairs AS spouseInfo
+                                        MATCH (spouse1:Person {id: spouseInfo.id1}),
+                                              (spouse2:Person {id: spouseInfo.id2})
+                                        CREATE (spouse1)-[r:IS_SPOUSE_OF]->(spouse2)
+                                        FOREACH (marriageInfo IN spouseInfo.events["MARR"] |
+                                            CREATE (spouse1)-[r:IS_MARRIED_TO]->(spouse2)
+                                            SET r = marriageInfo
+                                        )
+                                        FOREACH (divorceInfo IN spouseInfo.events["DIV"] |
+                                            CREATE (spouse1)-[r:DIVORCED]->(spouse2)
+                                            SET r = divorceInfo
+                                        )
                                         WITH spouse1, spouse2
                                         UNWIND $childIds AS childId
                                         MATCH (child:Person {id: childId})
                                         CREATE (child)-[:IS_CHILD_OF]->(spouse1)
                                         CREATE (child)-[:IS_CHILD_OF]->(spouse2)
                                         """,
-                                familyExtractors.get().apply(family))
+                                attributes)
                         .getQueryStatistics();
 
                 statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
