@@ -8,7 +8,7 @@
     <properties>
         <java.version>17</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
-        <neo4j.version>5.24.0</neo4j.version>
+        <neo4j.version>5.24.1</neo4j.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <dependencyManagement>
