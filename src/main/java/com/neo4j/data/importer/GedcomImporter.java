@@ -57,9 +57,9 @@ public class GedcomImporter {
                                         UNWIND $spouseIdPairs AS spouseInfo
                                         MATCH (spouse1:Person {id: spouseInfo.id1}),
                                               (spouse2:Person {id: spouseInfo.id2})
-                                        CREATE (spouse1)-[r:IS_SPOUSE_OF]->(spouse2)
+                                        CREATE (spouse1)-[r:SPOUSE_OF]->(spouse2)
                                         FOREACH (marriageInfo IN spouseInfo.events["MARR"] |
-                                            CREATE (spouse1)-[r:IS_MARRIED_TO]->(spouse2)
+                                            CREATE (spouse1)-[r:MARRIED_TO]->(spouse2)
                                             SET r = marriageInfo
                                         )
                                         FOREACH (divorceInfo IN spouseInfo.events["DIV"] |
@@ -69,8 +69,8 @@ public class GedcomImporter {
                                         WITH spouse1, spouse2
                                         UNWIND $childIds AS childId
                                         MATCH (child:Person {id: childId})
-                                        CREATE (child)-[:IS_CHILD_OF]->(spouse1)
-                                        CREATE (child)-[:IS_CHILD_OF]->(spouse2)
+                                        CREATE (child)-[:CHILD_OF]->(spouse1)
+                                        CREATE (child)-[:CHILD_OF]->(spouse2)
                                         """,
                                 attributes)
                         .getQueryStatistics();

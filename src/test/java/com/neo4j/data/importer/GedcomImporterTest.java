@@ -95,11 +95,11 @@ class GedcomImporterTest {
 
             assertThat(relationships)
                     .hasSize(17)
-                    .filteredOn(r -> r.type().equals("IS_SPOUSE_OF"))
+                    .filteredOn(r -> r.type().equals("SPOUSE_OF"))
                     .hasSize(3);
 
             assertThat(relationships)
-                    .filteredOn(r -> r.type().equals("IS_CHILD_OF"))
+                    .filteredOn(r -> r.type().equals("CHILD_OF"))
                     .hasSize(14);
 
             assertThat(nodesCreated).isEqualTo(11);
@@ -119,23 +119,23 @@ class GedcomImporterTest {
             var patty = new Person(List.of("Patty"), List.of("Bouvier"), "F");
             assertThat(relationships)
                     .containsExactlyInAnyOrder(
-                            familyRel(homer, "IS_SPOUSE_OF", marge),
-                            familyRel(abraham, "IS_SPOUSE_OF", mona),
-                            familyRel(clancy, "IS_SPOUSE_OF", jacqueline),
-                            familyRel(homer, "IS_CHILD_OF", abraham),
-                            familyRel(homer, "IS_CHILD_OF", mona),
-                            familyRel(marge, "IS_CHILD_OF", clancy),
-                            familyRel(marge, "IS_CHILD_OF", jacqueline),
-                            familyRel(lisa, "IS_CHILD_OF", marge),
-                            familyRel(lisa, "IS_CHILD_OF", homer),
-                            familyRel(bart, "IS_CHILD_OF", marge),
-                            familyRel(bart, "IS_CHILD_OF", homer),
-                            familyRel(maggie, "IS_CHILD_OF", marge),
-                            familyRel(maggie, "IS_CHILD_OF", homer),
-                            familyRel(selma, "IS_CHILD_OF", jacqueline),
-                            familyRel(selma, "IS_CHILD_OF", clancy),
-                            familyRel(patty, "IS_CHILD_OF", jacqueline),
-                            familyRel(patty, "IS_CHILD_OF", clancy));
+                            familyRel(homer, "SPOUSE_OF", marge),
+                            familyRel(abraham, "SPOUSE_OF", mona),
+                            familyRel(clancy, "SPOUSE_OF", jacqueline),
+                            familyRel(homer, "CHILD_OF", abraham),
+                            familyRel(homer, "CHILD_OF", mona),
+                            familyRel(marge, "CHILD_OF", clancy),
+                            familyRel(marge, "CHILD_OF", jacqueline),
+                            familyRel(lisa, "CHILD_OF", marge),
+                            familyRel(lisa, "CHILD_OF", homer),
+                            familyRel(bart, "CHILD_OF", marge),
+                            familyRel(bart, "CHILD_OF", homer),
+                            familyRel(maggie, "CHILD_OF", marge),
+                            familyRel(maggie, "CHILD_OF", homer),
+                            familyRel(selma, "CHILD_OF", jacqueline),
+                            familyRel(selma, "CHILD_OF", clancy),
+                            familyRel(patty, "CHILD_OF", jacqueline),
+                            familyRel(patty, "CHILD_OF", clancy));
         }
     }
 
@@ -164,7 +164,7 @@ class GedcomImporterTest {
             var relationships = driver
                     .executableQuery(
                             """
-                            MATCH (i: Person)-[r:IS_SPOUSE_OF]->(j: Person)
+                            MATCH (i: Person)-[r:SPOUSE_OF]->(j: Person)
                             WHERE i.gender = j.gender
                             RETURN i, r, j
                             """)
@@ -175,7 +175,7 @@ class GedcomImporterTest {
 
             var john = new Person(List.of("John"), List.of("Smith"), "M");
             var steven = new Person(List.of("Steven"), List.of("Stevens"), "M");
-            assertThat(relationships).containsExactlyInAnyOrder(familyRel(john, "IS_SPOUSE_OF", steven));
+            assertThat(relationships).containsExactlyInAnyOrder(familyRel(john, "SPOUSE_OF", steven));
         }
     }
 
@@ -187,8 +187,8 @@ class GedcomImporterTest {
             var relationships = driver
                     .executableQuery(
                             """
-                            MATCH (i: Person)-[r:IS_SPOUSE_OF]-(j: Person)
-                            MATCH (i)-[:IS_SPOUSE_OF]-(k: Person)
+                            MATCH (i: Person)-[r:SPOUSE_OF]-(j: Person)
+                            MATCH (i)-[:SPOUSE_OF]-(k: Person)
                             WHERE id(j) <> id(k)
                             RETURN i, r, j""")
                     .execute(Collectors.toList())
@@ -200,8 +200,7 @@ class GedcomImporterTest {
             var peter = new Person(List.of("Peter"), List.of("Sweet"), "M");
             var juan = new Person(List.of("Juan"), List.of("Donalds"), "M");
 
-            assertThat(relationships)
-                    .contains(familyRel(mary, "IS_SPOUSE_OF", peter), familyRel(mary, "IS_SPOUSE_OF", juan));
+            assertThat(relationships).contains(familyRel(mary, "SPOUSE_OF", peter), familyRel(mary, "SPOUSE_OF", juan));
             ;
         }
     }
@@ -239,7 +238,7 @@ class GedcomImporterTest {
                             """
                             MATCH (john:Person {first_names: ["John"], last_names: ["DOE"]}),
                                   (jane:Person {first_names: ["Jane"], last_names: ["DOE"]}),
-                                  (john)-[r:IS_MARRIED_TO]->(jane)
+                                  (john)-[r:MARRIED_TO]->(jane)
                             RETURN r
                             """)
                     .execute(Collectors.toList())
