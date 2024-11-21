@@ -4,6 +4,10 @@
 
 This project hosts the Cypher procedure `genealogy.loadGedcom()` related to the import of genealogical data, encoded in Gedcom (5.5) files.
 
+## Download
+
+Proceed to https://github.com/neo4j-contrib/neo4j-gedcom/packages/ and grab the latest published JAR file.
+
 ## Build Locally
 
 ### Prerequisites

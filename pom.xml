@@ -5,6 +5,13 @@
     <groupId>com.neo4j.data.importer</groupId>
     <artifactId>neo4j-gedcom</artifactId>
     <version>1.0-SNAPSHOT</version>
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>Github Packages</name>
+            <url>https://maven.pkg.github.com/neo4j-contrib/neo4j-gedcom</url>
+        </repository>
+    </distributionManagement>
     <properties>
         <java.version>17</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
