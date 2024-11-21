@@ -1,4 +1,4 @@
-package com.neo4j.data.importer;
+package com.neo4j.data.importer.extractors;
 
 import java.util.List;
 
