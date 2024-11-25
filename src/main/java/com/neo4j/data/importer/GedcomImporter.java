@@ -38,44 +38,26 @@ public class GedcomImporter {
         var model = loadModel(filePath);
 
         var dateParser = new Parser();
-        var personExtractors = new PersonExtractors(dateParser, model);
         var statistics = new Statistics();
         try (Transaction tx = db.beginTx()) {
+
+            var personExtractors = new PersonExtractors(dateParser, model);
             model.getPeople().forEach(person -> {
-                var attributes = personExtractors.get().apply(person);
-                var personsStats = tx.execute("CREATE (i:Person) SET i = $attributes", Map.of("attributes", attributes))
+                var personExtractor = personExtractors.get();
+                var attributes = personExtractor.apply(person);
+                var personsStats = tx.execute(personExtractor.query(), Map.of("attributes", attributes))
                         .getQueryStatistics();
 
-                statistics.addNodesCreated(personsStats.getNodesCreated());
+                personExtractor.updateCounters(personsStats, statistics);
             });
 
             var familyExtractors = new FamilyExtractors(dateParser);
             model.getFamilies().forEach(family -> {
-                var attributes = familyExtractors.get().apply(family);
-                var stats = tx.execute(
-                                """
-                                        UNWIND $spouseIdPairs AS spouseInfo
-                                        MATCH (spouse1:Person {id: spouseInfo.id1}),
-                                              (spouse2:Person {id: spouseInfo.id2})
-                                        CREATE (spouse1)-[r:SPOUSE_OF]->(spouse2)
-                                        FOREACH (marriageInfo IN spouseInfo.events["MARR"] |
-                                            CREATE (spouse1)-[r:MARRIED_TO]->(spouse2)
-                                            SET r = marriageInfo
-                                        )
-                                        FOREACH (divorceInfo IN spouseInfo.events["DIV"] |
-                                            CREATE (spouse1)-[r:DIVORCED]->(spouse2)
-                                            SET r = divorceInfo
-                                        )
-                                        WITH spouse1, spouse2
-                                        UNWIND $childIds AS childId
-                                        MATCH (child:Person {id: childId})
-                                        CREATE (child)-[:CHILD_OF]->(spouse1)
-                                        CREATE (child)-[:CHILD_OF]->(spouse2)
-                                        """,
-                                attributes)
+                var familyExtractor = familyExtractors.get();
+                var familyStats = tx.execute(familyExtractor.query(), familyExtractor.apply(family))
                         .getQueryStatistics();
 
-                statistics.addRelationshipsCreated(stats.getRelationshipsCreated());
+                familyExtractor.updateCounters(familyStats, statistics);
             });
 
             tx.commit();
