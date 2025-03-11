@@ -15,7 +15,7 @@
     <properties>
         <java.version>17</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
-        <neo4j.version>5.26.3</neo4j.version>
+        <neo4j.version>5.26.4</neo4j.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <dependencyManagement>
