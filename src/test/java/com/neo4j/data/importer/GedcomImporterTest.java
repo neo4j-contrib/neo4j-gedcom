@@ -292,10 +292,7 @@ class GedcomImporterTest {
         try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
             loadGedcom(driver, "AlternateNames.ged");
 
-            var person = driver
-                    .executableQuery("MATCH (p:Person) RETURN p")
-                    .execute(Collectors.toList())
-                    .stream()
+            var person = driver.executableQuery("MATCH (p:Person) RETURN p").execute(Collectors.toList()).stream()
                     .map(record -> record.get("p").asNode())
                     .findFirst()
                     .orElseThrow();
