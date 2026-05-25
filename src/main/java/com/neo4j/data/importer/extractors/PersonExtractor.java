@@ -24,6 +24,10 @@ interface PersonExtractor extends AttributeExtractor<Person> {
         return Optional.empty();
     }
 
+    default Map<String, Object> typedNames(Person person) {
+        return Map.of();
+    }
+
     default String query() {
         return "CREATE (i:Person) SET i = $attributes";
     }
@@ -33,8 +37,9 @@ interface PersonExtractor extends AttributeExtractor<Person> {
         attributes.put("id", id(person));
         attributes.put("first_names", firstNames(person));
         attributes.put("last_names", surnames(person));
+        attributes.putAll(typedNames(person));
         gender(person).ifPresent(gender -> attributes.put("gender", gender));
-        preferredFirstName(person).ifPresent(gender -> attributes.put("preferred_first_name", gender));
+        preferredFirstName(person).ifPresent(p -> attributes.put("preferred_first_name", p));
         return attributes;
     }
 

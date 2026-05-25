@@ -1,0 +1,14 @@
+0 HEAD
+1 SOUR Gramps
+2 VERS AIO64-5.2.3-r1-aa03f5a
+2 NAME Gramps
+0 @I0001@ INDI
+1 NAME Jane /Smith/
+2 TYPE married
+2 GIVN Jane
+2 SURN Smith
+1 NAME Jane /Jones/
+2 TYPE birth
+2 GIVN Jane
+2 SURN Jones
+1 SEX F

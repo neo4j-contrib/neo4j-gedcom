@@ -40,6 +40,11 @@ class HeredisPersonExtractor implements PersonExtractor {
     }
 
     @Override
+    public Map<String, Object> typedNames(Person person) {
+        return delegate.typedNames(person);
+    }
+
+    @Override
     public Optional<String> preferredFirstName(Person person) {
         var preferredNames = PersonNames.extract(person, Name::getGiven)
                 .filter(PersonNames::isQuoted)
