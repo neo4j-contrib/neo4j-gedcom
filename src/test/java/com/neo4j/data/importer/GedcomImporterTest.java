@@ -285,7 +285,25 @@ class GedcomImporterTest {
                             "raw_date", "23 OCT 2017",
                             "location", "Strasbourg,67000,Bas Rhin,Alsace,FRANCE,"));
         }
-        ;
+    }
+
+    @Test
+    void parses_alternate_names() {
+        try (Driver driver = GraphDatabase.driver(neo4j.boltURI())) {
+            loadGedcom(driver, "AlternateNames.ged");
+
+            var person = driver.executableQuery("MATCH (p:Person) RETURN p").execute(Collectors.toList()).stream()
+                    .map(record -> record.get("p").asNode())
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(person.get("preferred_first_name").asString()).isEqualTo("Jane");
+            assertThat(person.get("preferred_last_name").asString()).isEqualTo("Smith");
+            assertThat(person.get("birth_first_name").asString()).isEqualTo("Jane");
+            assertThat(person.get("birth_last_name").asString()).isEqualTo("Jones");
+            assertThat(person.get("married_first_name").asString()).isEqualTo("Jane");
+            assertThat(person.get("married_last_name").asString()).isEqualTo("Smith");
+        }
     }
 
     private static FamilyRelation familyRel(Person person1, String relType, Person person2) {
