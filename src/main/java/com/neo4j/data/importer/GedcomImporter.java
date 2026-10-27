@@ -5,6 +5,8 @@ import com.neo4j.data.importer.extractors.FamilyExtractors;
 import com.neo4j.data.importer.extractors.PersonExtractors;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.folg.gedcom.model.Gedcom;
@@ -23,6 +25,8 @@ import org.xml.sax.SAXParseException;
 
 public class GedcomImporter {
 
+    private static final int BATCH_SIZE = 1000;
+
     @Context
     public GraphDatabaseService db;
 
@@ -32,35 +36,45 @@ public class GedcomImporter {
     @Context
     public DependencyResolver dependencyResolver;
 
-    @Procedure(value = "genealogy.loadGedcom", mode = Mode.WRITE)
+    @Procedure(value = "genealogy.loadGedcom", mode = Mode.SCHEMA)
     public Stream<Statistics> loadGedcom(@Name("file") String file) throws IOException, SAXParseException {
         var filePath = rebuildPath(file);
         var model = loadModel(filePath);
 
+        try (Transaction tx = db.beginTx()) {
+            tx.execute("CREATE RANGE INDEX person_id IF NOT EXISTS FOR (p:Person) ON (p.id)");
+            tx.commit();
+        }
+        try (Transaction tx = db.beginTx()) {
+            tx.execute("CALL db.awaitIndexes(300)");
+            tx.commit();
+        }
+
         var dateParser = new Parser();
         var statistics = new Statistics();
-        try (Transaction tx = db.beginTx()) {
 
-            var personExtractors = new PersonExtractors(dateParser, model);
-            model.getPeople().forEach(person -> {
-                var personExtractor = personExtractors.get();
-                var attributes = personExtractor.apply(person);
-                var personsStats = tx.execute(personExtractor.query(), Map.of("attributes", attributes))
+        var personExtractor = PersonExtractors.personExtractor(dateParser, model);
+        var personAttributes = model.getPeople().stream().map(personExtractor).toList();
+        for (var batch : partition(personAttributes, BATCH_SIZE)) {
+            try (Transaction tx = db.beginTx()) {
+                var personsStats = tx.execute(personExtractor.query(), Map.of("batch", batch))
                         .getQueryStatistics();
 
                 personExtractor.updateCounters(personsStats, statistics);
-            });
+                tx.commit();
+            }
+        }
 
-            var familyExtractors = new FamilyExtractors(dateParser);
-            model.getFamilies().forEach(family -> {
-                var familyExtractor = familyExtractors.get();
-                var familyStats = tx.execute(familyExtractor.query(), familyExtractor.apply(family))
+        var familyExtractor = FamilyExtractors.familyExtractor(dateParser);
+        var familyAttributes = model.getFamilies().stream().map(familyExtractor).toList();
+        for (var batch : partition(familyAttributes, BATCH_SIZE)) {
+            try (Transaction tx = db.beginTx()) {
+                var familyStats = tx.execute(familyExtractor.query(), Map.of("families", batch))
                         .getQueryStatistics();
 
                 familyExtractor.updateCounters(familyStats, statistics);
-            });
-
-            tx.commit();
+                tx.commit();
+            }
         }
 
         logger.info(
@@ -77,6 +91,14 @@ public class GedcomImporter {
         var gedcom = modelParser.parseGedcom(gedcomFile);
         gedcom.createIndexes();
         return gedcom;
+    }
+
+    private static <T> List<List<T>> partition(List<T> list, int size) {
+        List<List<T>> result = new ArrayList<>((list.size() + size - 1) / size);
+        for (int i = 0; i < list.size(); i += size) {
+            result.add(list.subList(i, Math.min(i + size, list.size())));
+        }
+        return result;
     }
 
     private String rebuildPath(String fileName) {

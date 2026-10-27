@@ -1,19 +1,13 @@
 package com.neo4j.data.importer.extractors;
 
 import com.joestelmach.natty.Parser;
-import java.util.function.Supplier;
 import org.folg.gedcom.model.Family;
 
-public class FamilyExtractors implements Supplier<AttributeExtractor<Family>> {
+public class FamilyExtractors {
 
-    private final Parser dateParser;
+    private FamilyExtractors() {}
 
-    public FamilyExtractors(Parser dateParser) {
-        this.dateParser = dateParser;
-    }
-
-    @Override
-    public AttributeExtractor<Family> get() {
+    public static AttributeExtractor<Family> familyExtractor(Parser dateParser) {
         return new DefaultFamilyExtractor(dateParser);
     }
 }

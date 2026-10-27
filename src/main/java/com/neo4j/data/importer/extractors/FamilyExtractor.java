@@ -17,10 +17,11 @@ public interface FamilyExtractor extends AttributeExtractor<Family> {
 
     default String query() {
         return """
-                UNWIND $spouseIdPairs AS spouseInfo
+                UNWIND $families AS family
+                UNWIND family.spouseIdPairs AS spouseInfo
                 MATCH (spouse1:Person {id: spouseInfo.id1}),
                       (spouse2:Person {id: spouseInfo.id2})
-                CREATE (spouse1)-[r:SPOUSE_OF]->(spouse2)
+                CREATE (spouse1)-[:SPOUSE_OF]->(spouse2)
                 FOREACH (marriageInfo IN spouseInfo.events["MARR"] |
                     CREATE (spouse1)-[r:MARRIED_TO]->(spouse2)
                     SET r = marriageInfo
@@ -29,8 +30,8 @@ public interface FamilyExtractor extends AttributeExtractor<Family> {
                     CREATE (spouse1)-[r:DIVORCED]->(spouse2)
                     SET r = divorceInfo
                 )
-                WITH spouse1, spouse2
-                UNWIND $childIds AS childId
+                WITH spouse1, spouse2, family
+                UNWIND family.childIds AS childId
                 MATCH (child:Person {id: childId})
                 CREATE (child)-[:CHILD_OF]->(spouse1)
                 CREATE (child)-[:CHILD_OF]->(spouse2)
