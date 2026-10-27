@@ -64,3 +64,7 @@ CALL genealogy.loadGedcom('my.ged')
 ```
 
 In this invocation example, 'my.ged' is a Gedcom 5.5 file placed under `/path/to/server/import/my.ged`.
+
+### Notes
+
+The procedure creates a range index `person_id` on `Person(id)` (used to resolve family links) and imports records in batches of 1,000, committing each batch separately. A failed import can therefore leave partial data in the graph — delete previously imported data before retrying.

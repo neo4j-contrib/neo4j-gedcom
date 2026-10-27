@@ -29,7 +29,7 @@ interface PersonExtractor extends AttributeExtractor<Person> {
     }
 
     default String query() {
-        return "CREATE (i:Person) SET i = $attributes";
+        return "UNWIND $batch AS attributes CREATE (i:Person) SET i = attributes";
     }
 
     default Map<String, Object> apply(Person person) {
